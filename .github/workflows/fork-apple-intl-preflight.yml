@@ -2,9 +2,6 @@ name: Fork Apple Intl preflight
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - codex/fork-intl-preflight
 
 permissions:
   contents: read
@@ -34,6 +31,7 @@ jobs:
         with:
           ref: 88b4cf73f0a4f559dfc4d732b5ae0bcd3ecc0e96
           path: hermes
+          fetch-depth: 2
           persist-credentials: false
       - name: Verify contribution and base commits
         run: |
