@@ -1,0 +1,56 @@
+name: Fork Apple Intl preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/fork-intl-preflight
+
+permissions:
+  contents: read
+
+jobs:
+  macos-intl:
+    runs-on: macos-15
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: default
+            cmake_flags: ""
+            lit_flags: ""
+            test_runner_flags: ""
+          - mode: jit
+            cmake_flags: "-DHERMESVM_ALLOW_JIT=2"
+            lit_flags: "-Xjit=force"
+            test_runner_flags: "--vm-args=-Xjit=force"
+    name: macOS Intl ${{ matrix.mode }}
+    steps:
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 16.2
+      - uses: actions/checkout@v4.1.0
+        with:
+          ref: 88b4cf73f0a4f559dfc4d732b5ae0bcd3ecc0e96
+          path: hermes
+          persist-credentials: false
+      - name: Verify contribution and base commits
+        run: |
+          test "$(git -C hermes rev-parse HEAD)" = "88b4cf73f0a4f559dfc4d732b5ae0bcd3ecc0e96"
+          test "$(git -C hermes rev-parse HEAD^)" = "8eff1a6ac16c336ca7cf7ad4cc947e420bfc8ef2"
+          git -C hermes log -1 --format='%H %s'
+      - name: Install dependencies and pinned Test262
+        run: |
+          brew update
+          (brew list ninja cmake || brew install ninja cmake)
+          git clone https://github.com/tc39/test262
+          git -C test262 checkout c9aa6126e8f6fe2c6f668c65bfba771ffc8a6096
+      - name: Build and run Hermes and Test262 tests
+        env:
+          LIT_HERMES_EXTRA_FLAGS: ${{ matrix.lit_flags }}
+        run: |
+          cmake -S hermes -B build -GNinja -DHERMES_ENABLE_INTL=ON -DCMAKE_BUILD_TYPE=Debug ${{ matrix.cmake_flags }}
+          cmake --build ./build
+          cmake --build ./build --target check-hermes
+          python3 hermes/utils/test_runner.py --test-intl test262/test -b build/bin ${{ matrix.test_runner_flags }}
