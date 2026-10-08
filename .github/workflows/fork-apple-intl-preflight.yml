@@ -2,6 +2,15 @@ name: Fork Apple Intl preflight
 
 on:
   workflow_dispatch:
+    inputs:
+      patch_sha:
+        description: Full contribution commit SHA
+        required: true
+        type: string
+      base_sha:
+        description: Full upstream static_h commit SHA
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -29,14 +38,23 @@ jobs:
           xcode-version: 16.2
       - uses: actions/checkout@v4.1.0
         with:
-          ref: 88b4cf73f0a4f559dfc4d732b5ae0bcd3ecc0e96
+          ref: ${{ inputs.patch_sha }}
           path: hermes
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
-      - name: Verify contribution and base commits
+      - name: Verify contribution and test upstream merge
+        env:
+          PATCH_SHA: ${{ inputs.patch_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
         run: |
-          test "$(git -C hermes rev-parse HEAD)" = "88b4cf73f0a4f559dfc4d732b5ae0bcd3ecc0e96"
-          test "$(git -C hermes rev-parse HEAD^)" = "8eff1a6ac16c336ca7cf7ad4cc947e420bfc8ef2"
+          [[ "$PATCH_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C hermes rev-parse HEAD)" = "$PATCH_SHA"
+          git -C hermes fetch https://github.com/facebook/hermes.git "$BASE_SHA"
+          test "$(git -C hermes rev-parse FETCH_HEAD)" = "$BASE_SHA"
+          git -C hermes -c user.name=Preflight -c user.email=preflight@example.invalid merge --no-commit --no-ff "$BASE_SHA"
+          git -C hermes diff --check
+          git -C hermes write-tree
           git -C hermes log -1 --format='%H %s'
       - name: Install dependencies and pinned Test262
         run: |
@@ -48,7 +66,7 @@ jobs:
         env:
           LIT_HERMES_EXTRA_FLAGS: ${{ matrix.lit_flags }}
         run: |
-          cmake -S hermes -B build -GNinja -DHERMES_ENABLE_INTL=ON -DCMAKE_BUILD_TYPE=Debug ${{ matrix.cmake_flags }}
+          cmake -S hermes -B build -GNinja -DHERMES_ENABLE_INTL=ON -DHERMES_ENABLE_ADDRESS_SANITIZER=ON -DCMAKE_CXX_FLAGS=-O1 -DCMAKE_C_FLAGS=-O1 -DCMAKE_BUILD_TYPE=Debug ${{ matrix.cmake_flags }}
           cmake --build ./build
           cmake --build ./build --target check-hermes
           python3 hermes/utils/test_runner.py --test-intl test262/test -b build/bin ${{ matrix.test_runner_flags }}
